@@ -1,0 +1,355 @@
+# MorseML (STM32F429 + Naive Bayes)
+
+---
+
+# Overview
+
+This project decodes Morse code input using:
+
+* STM32F429 (bare-metal programming, no HAL)
+* A lightweight Machine Learning model (Gaussian Naive Bayes)
+* USART output via PuTTY
+
+The system allows a user to input Morse code using the onboard push button. The STM32 measures the timing of button presses, converts them into numerical features, and uses a trained ML model to predict which alphabet (A–E) was entered.
+
+---
+
+# System Flow
+
+The complete pipeline works as follows:
+
+1. User presses the button in Morse code pattern
+2. STM32 measures press durations
+3. Timing data is converted into a feature vector
+4. Feature vector is normalized
+5. ML model (Naive Bayes) computes probabilities
+6. Best matching letter is selected
+7. Output is sent to PuTTY via USART
+
+---
+
+# What is Morse Code?
+
+Morse code encodes letters using:
+
+* Short signal → DOT
+* Long signal → DASH
+
+Each letter is represented as a sequence of dots and dashes.
+
+In this project, Morse is not directly interpreted as symbols. Instead:
+
+* Press duration → determines dot or dash implicitly
+* Gap between presses → separates symbols
+
+---
+
+# Supported Letters
+
+The system currently supports:
+
+* A → dot dash
+* B → dash dot dot dot
+* C → dash dot dash dot
+* D → dash dot dot
+* E → dot
+
+---
+
+# Feature Extraction (STM32 Side)
+
+The STM32 measures:
+
+* Time when button is pressed
+* Time when button is released
+
+From this, it calculates:
+
+```text
+press[i] = duration of each press
+```
+
+Example:
+
+```text
+A (dot dash):
+Press1 ≈ 100 ms
+Press2 ≈ 300 ms
+```
+
+Converted into:
+
+```text
+[100, 300]
+```
+
+---
+
+# Feature Vector Formation
+
+The system converts the timing into a fixed-length vector:
+
+```text
+[press1, press2, press3, press4, press5]
+```
+
+If fewer presses exist, remaining values are padded with zeros.
+
+---
+
+# Normalization
+
+To handle different typing speeds, the system normalizes input:
+
+```c
+input_data[i] = press[i] / max_press
+```
+
+This ensures:
+
+* Fast and slow users produce similar patterns
+* Model becomes robust
+
+---
+
+# Machine Learning Model
+
+## Model Type: Gaussian Naive Bayes
+
+This model assumes:
+
+* Each feature follows a normal (Gaussian) distribution
+* Features are independent
+
+---
+
+## Training (Python Side)
+
+Training involves:
+
+1. Generate synthetic Morse data with noise
+2. Normalize the data
+3. Compute:
+
+```text
+Mean (μ) for each feature per class  
+Variance (σ²) for each feature per class  
+```
+
+These values are saved and exported to C.
+
+---
+
+## Exported Model
+
+The trained model is stored as:
+
+```c
+means[5][5]
+vars[5][5]
+labels[5]
+```
+
+Each row corresponds to one letter.
+
+---
+
+# Prediction (STM32 Side)
+
+For a new input vector:
+
+The classifier computes a score for each class:
+
+```text
+score = Σ [ -(x - μ)² / (2σ²) ]
+```
+
+Where:
+
+* x = input feature
+* μ = mean
+* σ² = variance
+
+The class with highest score is selected.
+
+---
+
+# Why This Works
+
+Even though users are inconsistent:
+
+* Data is normalized
+* Noise is included in training
+* Model learns statistical patterns
+
+This makes predictions stable.
+
+---
+
+# Directory Structure
+
+```text
+MorseML/
+│
+├── STM32/
+│   ├── main.c
+│   ├── classifier.c
+│   ├── classifier.h
+│   └── model_params.h
+│
+├── ML/
+│   ├── dataset_generator.py
+│   ├── train.py
+│   └── export_model.py
+│
+└── README.md
+```
+
+---
+
+# How to Use
+
+## Step 1: Generate Dataset
+
+```bash
+python dataset_generator.py
+```
+
+Creates synthetic Morse timing data with noise.
+
+---
+
+## Step 2: Train Model
+
+```bash
+python train.py
+```
+
+Calculates mean and variance for each class.
+
+---
+
+## Step 3: Export Model
+
+```bash
+python export_model.py
+```
+
+Generates:
+
+```text
+model_params.h
+```
+
+Copy this file into:
+
+```text
+STM32/
+```
+
+---
+
+## Step 4: Build in Keil
+
+* Open project
+* Add:
+
+  * main.c
+  * classifier.c
+  * model_params.h
+* Enable CMSIS Core
+* Build project
+
+---
+
+## Step 5: Run
+
+* Connect board
+* Open PuTTY (115200 baud)
+* Press button in Morse
+
+Output:
+
+```text
+Predicted: A
+```
+
+---
+
+# Hardware Setup
+
+* Board: STM32F429ZITx
+* Button: PC13
+* USART1:
+
+  * PA9 → TX → PuTTY
+  * PA10 → RX (unused)
+
+---
+
+# Example
+
+Input (user presses):
+
+```text
+short press → long press
+```
+
+STM32 measures:
+
+```text
+[120 ms, 310 ms]
+```
+
+Normalized:
+
+```text
+[0.38, 1.0]
+```
+
+Model predicts:
+
+```text
+A
+```
+
+---
+
+# Advantages of This Approach
+
+* No TensorFlow required
+* Very low memory usage
+* Fast inference
+* Easy to debug
+* Works well for small datasets
+
+---
+
+# Limitations
+
+* Only supports A–E
+* Assumes consistent timing patterns
+* No word-level decoding
+
+---
+
+# Future Improvements
+
+* Add full alphabet (A–Z)
+* Include gap timings as features
+* Add word detection
+* Add LCD display
+* Improve dataset realism
+
+---
+
+# Summary
+
+This project demonstrates:
+
+* Embedded systems (STM32 bare-metal)
+* Signal processing (timing extraction)
+* Machine Learning (Naive Bayes)
+* Edge inference (on-device prediction)
+
+A complete embedded ML pipeline without heavy frameworks.
